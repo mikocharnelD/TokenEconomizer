@@ -522,7 +522,10 @@ Which repository a session belongs to (`plugin/paths.py`, `plugin/repos.py`):
 * **One repository per session.** A hook's `cwd` is where the agent is now (Claude Code's
   follows its `cd`), so the first hook of a session pins it (`sessions/<host>/<id>.json`) and
   every later hook, and the fold it hands off, uses the repository it started in -- where the
-  agent files its own session log. `te status` run inside a session says so when the two differ.
+  agent files its own session log. On Claude Code the directory pinned is `CLAUDE_PROJECT_DIR`,
+  the project root the session started in, whatever directory the first hook names: a session
+  resumed after its agent `cd`'d into a subfolder stays with its project. `te status` run inside
+  a session says so when the two differ.
 * **Deny lists stay per checkout.** The clones of a repository share its evidence and proposal,
   but each has its own settings file, so `untool_applied.json` records per file what was added,
   and what the person gave back with `restore`: `toolprune: auto`, the default, never applies that

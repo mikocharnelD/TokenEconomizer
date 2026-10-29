@@ -236,6 +236,19 @@ class ClaudeCode(Host):
     def turn_key(self, p):
         return str(p.get("prompt_id") or "")
 
+    def cwd(self, p, env):
+        # The project directory the session started in, not where the agent is now. The hook
+        # payload's `cwd` follows the agent's `cd`, and a session pins whatever directory its
+        # first hook names -- after a resume, a subfolder the agent had moved into, so the whole
+        # session went under that subfolder's key. Claude Code sets `CLAUDE_PROJECT_DIR` for
+        # every hook to "the project root where the session started" (code.claude.com/docs/en/
+        # hooks), and it stays put across a `cd`; it is also where Claude Code files the
+        # session's log. A value that names no directory is ignored.
+        proj = env.get("CLAUDE_PROJECT_DIR")
+        if proj and os.path.isdir(proj):
+            return proj
+        return super().cwd(p, env)
+
     def env_session_id(self, env):
         # Claude Code exports its session id to the Bash tool's shell (seen on 2.1.304).
         return str(env.get("TE_SESSION_ID") or env.get("CLAUDE_CODE_SESSION_ID") or "")
