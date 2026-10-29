@@ -42,7 +42,7 @@ import sys
 import time
 
 from .. import loopguard
-from . import accounting, denylist, fold, hosts, paths, repomap, repos, sidecall, toolcheck
+from . import accounting, denylist, fold, history, hosts, paths, repomap, repos, sidecall, toolcheck
 from .config import canonical, unset_config, write_config
 from .context import LiveContext
 from .paths import state_root
@@ -513,6 +513,17 @@ def cmd_fold(args):
     return 0
 
 
+def cmd_history(args):
+    """Seed this repository from completed local Claude Code sessions."""
+    ctx = _ctx(args)
+    if ctx.host.name != "claude":
+        print("history import is available for Claude Code only")
+        return 2
+    result = history.import_history(ctx, exclude=args.exclude_session or ())
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
 def cmd_judge(args):
     """The detached half of the stuck judge (see plugin/judge.py); not for people."""
     from . import judge
@@ -735,6 +746,10 @@ def build_parser():
     p.add_argument("--session", action="append")
     p.add_argument("--verbose", action="store_true")
     p.set_defaults(fn=cmd_fold)
+    p = add("history")
+    p.add_argument("action", choices=("import",))
+    p.add_argument("--exclude-session", action="append")
+    p.set_defaults(fn=cmd_history)
     p = add("judge")
     p.add_argument("--session", required=True)
     p.add_argument("--job", required=True)
