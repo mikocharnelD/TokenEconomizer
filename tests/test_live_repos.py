@@ -143,6 +143,66 @@ def test_a_session_that_moves_into_another_repository_stays_with_its_own(tmp_pat
     assert not os.path.exists(os.path.join(env["TOKENECONOMIZER_HOME"], "repos", kb))
 
 
+def _project_with_subfolder(tmp_path):
+    """A project root that is no git checkout, and a folder deep below it (seen 2026-10-29: a
+    resumed session whose agent had `cd`'d into `HB/Data/browser_captures/sites`)."""
+    proj = tmp_path / "B"
+    sub = proj / "HB" / "Data" / "browser_captures" / "sites"
+    sub.mkdir(parents=True)
+    return str(proj), str(sub)
+
+
+def test_a_claude_session_resumed_in_a_subfolder_pins_its_project_dir(tmp_path, env):
+    """The fault: the first hook after a resume named the subfolder the agent had moved into,
+    so the whole session was filed under that subfolder's key. Claude Code's
+    `CLAUDE_PROJECT_DIR` names the project root the session started in, and it wins."""
+    proj, sub = _project_with_subfolder(tmp_path)
+    kp, ks = paths.repo_identity(proj, env).key, paths.repo_identity(sub, env).key
+    assert kp != ks
+    env = dict(env, CLAUDE_PROJECT_DIR=proj)
+    call(env, {"hook_event_name": "SessionStart", "session_id": "s1", "cwd": sub,
+               "source": "resume"}, "claude")
+    for p in _payloads("claude", "s1", sub, 1):
+        call(env, p, "claude")
+    pin = repos.pinned(env["TOKENECONOMIZER_HOME"], "claude", "s1")
+    assert pin.key == kp and pin.root == proj
+    rec = state(env, kp).read(os.path.join("sessions", "s1.json"))
+    assert rec["cwd"] == proj and len(rec["turns"]) == 1
+    assert not os.path.exists(os.path.join(env["TOKENECONOMIZER_HOME"], "repos", ks))
+
+
+def test_a_claude_session_with_no_pin_uses_its_project_dir_too(tmp_path, env):
+    """No SessionStart at all (a hook enabled mid-session, a pin pruned): the first hook of any
+    kind chooses the repository, from the project directory."""
+    proj, sub = _project_with_subfolder(tmp_path)
+    kp, ks = paths.repo_identity(proj, env).key, paths.repo_identity(sub, env).key
+    env = dict(env, CLAUDE_PROJECT_DIR=proj)
+    for p in _payloads("claude", "s2", sub, 1):
+        call(env, p, "claude")
+    assert repos.pinned(env["TOKENECONOMIZER_HOME"], "claude", "s2").key == kp
+    assert state(env, kp).read(os.path.join("sessions", "s2.json"))["cwd"] == proj
+    assert not os.path.exists(os.path.join(env["TOKENECONOMIZER_HOME"], "repos", ks))
+
+
+@pytest.mark.parametrize("host,extra", [("claude", {}),
+                                        ("claude", {"CLAUDE_PROJECT_DIR": "gone"}),
+                                        ("codex", {"CLAUDE_PROJECT_DIR": "proj"})])
+def test_without_a_usable_project_dir_the_first_hook_cwd_still_pins(tmp_path, env, host, extra):
+    """Unchanged where there is no project directory to go by: Claude Code without the
+    variable, or with one naming no directory, and every other agent (Codex here), which
+    pins the directory its first hook names even when the variable is in its environment."""
+    proj, sub = _project_with_subfolder(tmp_path)
+    ks = paths.repo_identity(sub, env).key
+    names = {"gone": str(tmp_path / "gone"), "proj": proj}
+    env = dict(env, **{k: names[v] for k, v in extra.items()})
+    call(env, {"hook_event_name": "SessionStart", "session_id": "s3", "cwd": sub,
+               "source": "startup"}, host)
+    for p in _payloads(host, "s3", sub, 1):
+        call(env, p, host)
+    assert repos.pinned(env["TOKENECONOMIZER_HOME"], host, "s3").key == ks
+    assert state(env, ks, host).read(os.path.join("sessions", "s3.json"))["cwd"] == sub
+
+
 def test_te_fold_for_a_session_uses_its_pin(tmp_path, env, monkeypatch):
     a = git_repo(str(tmp_path / "a"), "https://github.com/o/a")
     b = git_repo(str(tmp_path / "b"), "https://github.com/o/b")

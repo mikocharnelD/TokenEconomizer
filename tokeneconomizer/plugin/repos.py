@@ -9,7 +9,9 @@ sessions under one; each is handled here.
     repository would be recorded under both. The first hook of a session pins it
     (`<root>/sessions/<host>/<id>.json`), and every later hook, and the fold it hands off, uses
     the pinned repository: the one the session started in, which is also where the agent files
-    its own session log.
+    its own session log. On Claude Code that directory is `CLAUDE_PROJECT_DIR` when it is set
+    (`hosts.ClaudeCode.cwd`): a resumed session's first hook can name a subfolder the agent
+    had moved into, and the session would otherwise be pinned there.
   * A key that changed. Up to 0.1.0 a checkout's folder name was part of the key and any `.git`
     entry made a checkout, and a repository's `origin` can move. The first time a checkout is
     seen (`index.json` remembers the ones already seen) the state its earlier keys hold is sent
