@@ -111,7 +111,7 @@ def schedule(ctx, exclude=()):
             return False
         ctx.store.write(STATE_FILE, {"scheduled_at": now, "complete": False})
     try:
-        args = ["history", "import"]
+        args = ["fold", "--bootstrap-history"]
         for sid in exclude:
             args.extend(("--exclude-session", sid))
         if ctx.env.get("TE_FOLD_SYNC") == "1":

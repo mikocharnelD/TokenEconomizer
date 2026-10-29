@@ -503,6 +503,9 @@ def cmd_config(args):
 
 
 def cmd_fold(args):
+    if args.bootstrap_history:
+        history.import_history(_ctx(args), exclude=args.exclude_session or ())
+        return 0
     # A session is folded into the repository it is pinned to, wherever `--cwd` points.
     ctx = _session_ctx(args, (args.session or [None])[0])
     sids = args.session or fold.pending_sessions(ctx)
@@ -510,17 +513,6 @@ def cmd_fold(args):
         rec = fold.fold_session(ctx, sid)
         if rec is not None and args.verbose:
             print(json.dumps(rec, default=str))
-    return 0
-
-
-def cmd_history(args):
-    """Seed this repository from completed local Claude Code sessions."""
-    ctx = _ctx(args)
-    if ctx.host.name != "claude":
-        print("history import is available for Claude Code only")
-        return 2
-    result = history.import_history(ctx, exclude=args.exclude_session or ())
-    print(json.dumps(result, sort_keys=True))
     return 0
 
 
@@ -745,11 +737,9 @@ def build_parser():
     p = add("fold")
     p.add_argument("--session", action="append")
     p.add_argument("--verbose", action="store_true")
+    p.add_argument("--bootstrap-history", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--exclude-session", action="append", help=argparse.SUPPRESS)
     p.set_defaults(fn=cmd_fold)
-    p = add("history")
-    p.add_argument("action", choices=("import",))
-    p.add_argument("--exclude-session", action="append")
-    p.set_defaults(fn=cmd_history)
     p = add("judge")
     p.add_argument("--session", required=True)
     p.add_argument("--job", required=True)
