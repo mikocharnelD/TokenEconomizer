@@ -60,11 +60,11 @@ def candidates(ctx, now=None, exclude=()):
     """Yield (mtime, session_id, path) oldest first for this exact repository."""
     now = time.time() if now is None else now
     cutoff = now - HISTORY_DAYS * 86400
+    excluded = set(exclude)
     if ctx.host.name == "codex":
         return _codex_candidates(ctx, now, cutoff, excluded)
     root = _history_root(ctx.env)
     found = []
-    excluded = set(exclude)
     try:
         projects = os.scandir(root)
     except OSError:
