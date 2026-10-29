@@ -4,6 +4,8 @@ Only finished, recent sessions with a verifiable repository identity are folded.
 transcripts remain in Claude's local directory; this module never uploads or copies
 them into the repository. The ordinary fold's session-id ledger makes retries safe.
 """
+import glob
+import json
 import os
 import time
 
@@ -21,10 +23,45 @@ def _history_root(env):
     return os.path.join(os.path.abspath(config), "projects")
 
 
+def _codex_candidates(ctx, now, cutoff, excluded):
+    """Find completed Codex rollouts for this repository without reading their messages."""
+    home = ctx.env.get("CODEX_HOME") or os.path.join(
+        ctx.env.get("HOME") or os.path.expanduser("~"), ".codex")
+    pattern = os.path.join(os.path.abspath(home), "sessions", "*", "*", "*",
+                           "rollout-*.jsonl")
+    found = []
+    for path in glob.iglob(pattern):
+        try:
+            if os.path.islink(path):
+                continue
+            stat = os.stat(path)
+            if not (cutoff <= stat.st_mtime <= now - fold.STALE_S) or not stat.st_size:
+                continue
+            with open(path, encoding="utf-8") as fh:
+                first = json.loads(fh.readline())
+            if first.get("type") != "session_meta":
+                continue
+            meta = first.get("payload")
+            if not isinstance(meta, dict):
+                continue
+            sid, cwd = meta.get("id"), meta.get("cwd")
+            if not isinstance(sid, str) or not sid or sid in excluded:
+                continue
+            if not isinstance(cwd, str) or not os.path.isdir(cwd):
+                continue
+            if repo_identity(cwd, ctx.env).key == ctx.repo.key:
+                found.append((stat.st_mtime, sid, path))
+        except (OSError, ValueError, TypeError, AttributeError):
+            continue
+    return sorted(found)
+
+
 def candidates(ctx, now=None, exclude=()):
     """Yield (mtime, session_id, path) oldest first for this exact repository."""
     now = time.time() if now is None else now
     cutoff = now - HISTORY_DAYS * 86400
+    if ctx.host.name == "codex":
+        return _codex_candidates(ctx, now, cutoff, excluded)
     root = _history_root(ctx.env)
     found = []
     excluded = set(exclude)
@@ -63,7 +100,7 @@ def candidates(ctx, now=None, exclude=()):
 
 def import_history(ctx, exclude=()):
     """Import once, retrying safely after a crash or an incomplete prior run."""
-    if ctx.host.name != "claude":
+    if ctx.host.name not in ("claude", "codex"):
         return {"imported": 0, "skipped": 0}
     with ctx.store.locked("history-import", timeout=0.1) as got:
         if not got:
@@ -100,7 +137,7 @@ def import_history(ctx, exclude=()):
 
 def schedule(ctx, exclude=()):
     """Start one detached import from SessionStart without delaying the agent."""
-    if ctx.host.name != "claude":
+    if ctx.host.name not in ("claude", "codex"):
         return False
     with ctx.store.locked("history-schedule", timeout=0.1) as got:
         if not got:
