@@ -42,7 +42,13 @@ def _spawn_wmi(cmd, cwd, env, log_path):
                                 dir=os.path.dirname(log_path))
     with os.fdopen(fd, "w") as fh:
         json.dump({"cmd": cmd, "cwd": cwd, "env": env, "log": log_path}, fh)
-    line = subprocess.list2cmdline([sys.executable, os.path.abspath(__file__), spec])
+    # WMI starts the process outside any console: python.exe would open a console window of its
+    # own, pythonw.exe opens none.
+    exe = sys.executable
+    pyw = os.path.join(os.path.dirname(exe), "pythonw.exe")
+    if os.path.isfile(pyw):
+        exe = pyw
+    line = subprocess.list2cmdline([exe, os.path.abspath(__file__), spec])
     ps = ("$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments "
           "@{ CommandLine = '%s'; CurrentDirectory = '%s' }; exit $r.ReturnValue"
           % (line.replace("'", "''"), cwd.replace("'", "''")))
