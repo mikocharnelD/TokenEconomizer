@@ -19,8 +19,10 @@ import subprocess
 import sys
 import tempfile
 
-_FLAGS = (0x00000008      # DETACHED_PROCESS
-          | 0x00000200    # CREATE_NEW_PROCESS_GROUP
+# CREATE_NO_WINDOW gives the child a console with no window, which every descendant inherits, so
+# their console programs open no window either. DETACHED_PROCESS is left out: Windows ignores
+# CREATE_NO_WINDOW next to it, and a console-less child's console children would open windows.
+_FLAGS = (0x00000200      # CREATE_NEW_PROCESS_GROUP
           | 0x08000000)   # CREATE_NO_WINDOW
 _BREAKAWAY = 0x01000000   # CREATE_BREAKAWAY_FROM_JOB
 
@@ -44,13 +46,20 @@ def _spawn_wmi(cmd, cwd, env, log_path):
         json.dump({"cmd": cmd, "cwd": cwd, "env": env, "log": log_path}, fh)
     # WMI starts the process outside any console: python.exe would open a console window of its
     # own, pythonw.exe opens none.
-    exe = sys.executable
-    pyw = os.path.join(os.path.dirname(exe), "pythonw.exe")
-    if os.path.isfile(pyw):
-        exe = pyw
+    # Without pythonw.exe there is no windowless way through WMI: report failure, never python.exe.
+    exe = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+    if not os.path.isfile(exe):
+        try:
+            os.remove(spec)
+        except OSError:
+            pass
+        return False
     line = subprocess.list2cmdline([exe, os.path.abspath(__file__), spec])
-    ps = ("$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments "
-          "@{ CommandLine = '%s'; CurrentDirectory = '%s' }; exit $r.ReturnValue"
+    # ShowWindow 0 (SW_HIDE) in the WMI startup information as a second guard.
+    ps = ("$s = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }; "
+          "$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments "
+          "@{ CommandLine = '%s'; CurrentDirectory = '%s'; ProcessStartupInformation = $s }; "
+          "exit $r.ReturnValue"
           % (line.replace("'", "''"), cwd.replace("'", "''")))
     try:
         done = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],

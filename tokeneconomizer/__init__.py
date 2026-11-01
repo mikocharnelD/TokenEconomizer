@@ -17,20 +17,24 @@ hooks; the mechanisms never import it. Stdlib only.
 import os as _os
 import subprocess as _subprocess
 
-if _os.name == "nt":
+if _os.name == "nt" and not getattr(_subprocess.Popen.__init__, "_te_hidden", False):
     # Hooks and the detached `te` have no console, so every console program they start
     # (`claude -p`, `git`, `powershell`) would get a visible console window of its own.
     # CREATE_NO_WINDOW on every child process of this package keeps them all hidden.
-    _CREATE_NO_WINDOW = 0x08000000
-    _popen_init = _subprocess.Popen.__init__
+    # The marker is checked first, so a reload never wraps the wrapper; the original initializer
+    # is held in the closure. `creationflags` is the 14th positional parameter of Popen.
+    def _install(orig, flag=0x08000000, pos=13):
+        def _hidden_popen_init(self, *args, **kwargs):
+            if len(args) > pos:
+                args = args[:pos] + ((args[pos] or 0) | flag,) + args[pos + 1:]
+            else:
+                kwargs["creationflags"] = (kwargs.get("creationflags") or 0) | flag
+            orig(self, *args, **kwargs)
 
-    def _hidden_popen_init(self, *args, **kwargs):
-        kwargs["creationflags"] = kwargs.get("creationflags", 0) | _CREATE_NO_WINDOW
-        _popen_init(self, *args, **kwargs)
-
-    if not getattr(_subprocess.Popen.__init__, "_te_hidden", False):
         _hidden_popen_init._te_hidden = True
-        _subprocess.Popen.__init__ = _hidden_popen_init
+        return _hidden_popen_init
+
+    _subprocess.Popen.__init__ = _install(_subprocess.Popen.__init__)
 
 from .config import EconomizerConfig, InjectionConfig, SpiralConfig, ToolingConfig
 from . import ledger, trace

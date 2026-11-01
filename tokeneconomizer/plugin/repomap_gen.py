@@ -35,8 +35,10 @@ MAX_BYTES = 256 * 1024
 
 def _git_files(repo):
     import subprocess
+    # A standalone worker: the package's Popen patch is not loaded here, so the flag is explicit.
     out = subprocess.run(["git", "ls-files", "-z"], cwd=repo, capture_output=True,
-                         encoding="utf-8", errors="replace")
+                         encoding="utf-8", errors="replace",
+                         creationflags=0x08000000 if os.name == "nt" else 0)
     files = []
     for f in out.stdout.split("\0"):
         path = "/" + f
